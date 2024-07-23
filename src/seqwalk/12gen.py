@@ -70,8 +70,6 @@ def np_crosstalk(seq1, seq2, model=RT, conc=1e-6, RCfree=False):
     tRCfree = nu.Tube(strands={A: conc,~A: conc, B: conc,  ~B: conc},
                  name='tRC', complexes=nu.SetSpec(max_size=2))
     tube_results = nu.tube_analysis(tubes=[[tRC, tRCfree][RCfree]], model=model)
-    print(tube_results)
-    print("BRUH")
     if RCfree:
         return [tube_results.tubes[tRCfree].complex_concentrations[c] for c in [ct1]]
     return [tube_results.tubes[tRC].complex_concentrations[c] for c in [ct1]]
@@ -109,10 +107,11 @@ def ij_np_mat_mp_helper(library, model, conc, RCfree, i, j, np_probs):
     # safety check in case i misunderstood original code, avoid race conditions
     if i != j:
         p =  1 - np_crosstalk(library[i], library[j], model, conc, RCfree)[0]/conc
+        np_probs[i, j] += p
+        np_probs[j, i] += p
     else:
         p = np_crosstalk(library[i], library[i], model, conc, RCfree)[0]/conc
-    np_probs[i, j] += p
-    np_probs[j, i] += p
+        np_probs[i, i] += p
 
 def nupack_matrix_mp(library, model=RT, conc=1e-6, RCfree=False):
     """
@@ -149,6 +148,6 @@ def nupack_matrix_mp(library, model=RT, conc=1e-6, RCfree=False):
 
 # run my design job
 library = design.max_size(12, 6, alphabet="ACGT")
-nu_mat = nupack_matrix(library, conc=1e-8, RCfree=True)
+nu_mat = nupack_matrix_mp(library, conc=1e-8, RCfree=True)
 np.save("nu_mat", nu_mat)
 print(nu_mat)
