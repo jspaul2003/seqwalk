@@ -1,12 +1,16 @@
 import numpy as np
+from multiprocessing.pool import ThreadPool
+import tqdm
 '''
 wget “http://46.101.39.40/nupack_public/nupack-4.0.1.11.zip”
 unzip -q ‘nupack-4.0.1.11.zip’
 pip install -U nupack -f nupack-4.0.1.11/package
 '''
 import nupack as nu
+from seqwalk import design
+ncores = 32
 
-RT = nu.Model(material="dna", celsius=30, sodium=1.0, magnesium=0.0)
+RT = nu.Model(material="dna", celsius=30)
 
 def hamming(seq1, seq2):
     """
@@ -84,13 +88,61 @@ def nupack_matrix(library, model=RT, conc=1e-6, RCfree=False):
         NxN numpy array : np_probs
             binding probability heatmap
     """
+
     np_probs = np.zeros((len(library), len(library)))
-    for i in range(len(library)):
+    print("PART 1/2")
+    for i in tqdm.tqdm(range(len(library))):
         for j in range(i+1, len(library)):
-            p =  1 - np_crosstalk(library[i], library[j], model, conc)[0]/conc
+            p =  1 - np_crosstalk(library[i], library[j], model, conc, RCfree)[0]/conc
             np_probs[i, j] += p
             np_probs[j, i] += p
-    for i in range(len(library)):
-        np_probs[i, i] += np_crosstalk(library[i], library[j], model, conc)[0]/conc
+		
+    print("\n PART 2/2")
+    for i in tqdm.tqdm(range(len(library))):
+        np_probs[i, i] += np_crosstalk(library[i], library[i], model, conc, RCfree)[0]/conc
     return np_probs
+
+def ij_np_mat_mp_helper(library, model, conc, RCfree, i, j, np_probs):
+    assert(np_probs[i,j] == 0 and np_probs[j,i] == 0) 
+    # safety check in case i misunderstood original code, avoid race conditions
+    if i != j:
+        p =  1 - np_crosstalk(library[i], library[j], model, conc, RCfree)[0]/conc
+        np_probs[i, j] += p
+        np_probs[j, i] += p
+    else:
+        p = np_crosstalk(library[i], library[i], model, conc, RCfree)[0]/conc
+        np_probs[i, i] += p
+
+def nupack_matrix_mp(library, model=RT, conc=1e-6, RCfree=False):
+    """
+    matrix where element i, j is binding prob between seq i and seq j
+
+    Args:
+        library: list of seqs
+        model: nupack conditions (default RT)
+        conc: molar concentrations of strands (default 1e-6)
+        RCfree: Bool, True if library is to be RC free
+
+    Returns:
+        NxN numpy array : np_probs
+            binding probability heatmap
+    """
+
+    np_probs = np.zeros((len(library), len(library)))
+    print("BEGINNING")
+    # create the thread pool
+    n = len(library)
+    with ThreadPool(ncores) as pool:
+        with tqdm.tqdm(total= n*(n+1)/2) as pbar:
+            for i in range(n):
+                for j in range(i, n):
+                    # issue task
+                    _ = pool.apply_async(ij_np_mat_mp_helper, args=(library, model, conc, RCfree, i, j, np_probs), callback=lambda x: pbar.update(1))	
+        # close the pool
+        pool.close()
+        # wait for tasks to complete
+        pool.join()
+
+    return np_probs
+
 
