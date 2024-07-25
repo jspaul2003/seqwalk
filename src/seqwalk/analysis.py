@@ -1,5 +1,6 @@
 import numpy as np
 from multiprocessing.pool import ThreadPool
+from multiprocessing.pool import Pool
 import tqdm
 '''
 wget “http://46.101.39.40/nupack_public/nupack-4.0.1.11.zip”
@@ -132,7 +133,7 @@ def nupack_matrix_mp(library, model=RT, conc=1e-6, RCfree=False):
     print("BEGINNING")
     # create the thread pool
     n = len(library)
-    with ThreadPool(ncores) as pool:
+    with Pool(ncores) as pool:
         with tqdm.tqdm(total= n*(n+1)/2) as pbar:
             for i in range(n):
                 for j in range(i, n):
@@ -144,5 +145,3 @@ def nupack_matrix_mp(library, model=RT, conc=1e-6, RCfree=False):
         pool.join()
 
     return np_probs
-
-
